@@ -1,6 +1,6 @@
 
 import React, { useState, useMemo } from 'react';
-import Swal from 'https://esm.sh/sweetalert2';
+import Swal from 'https://esm.sh/sweetalert2@11';
 import { 
   CandidateInfo, 
   ScoringState, 
@@ -55,7 +55,6 @@ const App: React.FC = () => {
   const [data, setData] = useState<ScoringState>(initialState);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [submitStatus, setSubmitStatus] = useState<'idle' | 'success' | 'error'>('idle');
-  // Track submitted candidates in the current session to prevent duplicates
   const [submittedCandidates, setSubmittedCandidates] = useState<string[]>([]);
   
   const SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbyUz-D9I7QDYTbaZfFSQd9yt3oOO-Ai9rPA5xofkUOPJs39S_9e7DbjT5s-_JwDiEjGxQ/exec';
@@ -195,7 +194,6 @@ const App: React.FC = () => {
       return;
     }
 
-    // Duplicate Check
     const candidateKey = `${candidateName}|${data.info.school}|${data.info.division}`.toLowerCase();
     if (submittedCandidates.includes(candidateKey)) {
       const result = await Swal.fire({
@@ -215,7 +213,6 @@ const App: React.FC = () => {
     setIsSubmitting(true);
     setSubmitStatus('idle');
 
-    // Show loading spinner
     Swal.fire({
       title: 'Saving...',
       text: 'Synchronizing with database',
@@ -252,8 +249,6 @@ const App: React.FC = () => {
       });
 
       setSubmitStatus('success');
-      
-      // Add to submitted candidates set
       setSubmittedCandidates(prev => [...prev, candidateKey]);
 
       Swal.fire({
@@ -264,7 +259,6 @@ const App: React.FC = () => {
         showConfirmButton: false
       });
 
-      // Clear the data after saving
       setData(initialState);
       
     } catch (error) {
