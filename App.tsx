@@ -184,17 +184,26 @@ const App: React.FC = () => {
 
   const submitToDatabase = async () => {
     const candidateName = data.info.name.trim();
-    if (!candidateName) {
+    const schoolName = data.info.school.trim();
+    const divisionName = data.info.division.trim();
+
+    // Check all required fields
+    if (!divisionName || !schoolName || !candidateName) {
+      const missing = [];
+      if (!divisionName) missing.push("Division");
+      if (!schoolName) missing.push("School");
+      if (!candidateName) missing.push("Candidate Name");
+
       Swal.fire({
         icon: 'warning',
-        title: 'Missing Information',
-        text: "Please enter the candidate's name before saving.",
+        title: 'Required Information',
+        text: `Please provide: ${missing.join(", ")} before saving.`,
         confirmButtonColor: '#2563eb'
       });
       return;
     }
 
-    const candidateKey = `${candidateName}|${data.info.school}|${data.info.division}`.toLowerCase();
+    const candidateKey = `${candidateName}|${schoolName}|${divisionName}`.toLowerCase();
     if (submittedCandidates.includes(candidateKey)) {
       const result = await Swal.fire({
         icon: 'info',
@@ -224,8 +233,8 @@ const App: React.FC = () => {
 
     const payload = {
       name: candidateName,
-      school: data.info.school,
-      division: data.info.division,
+      school: schoolName,
+      division: divisionName,
       academic: data.academic.points,
       individual: data.individualContests.points,
       group: data.groupContests.points,
@@ -315,7 +324,9 @@ const App: React.FC = () => {
       <Card>
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
           <div className="space-y-1">
-            <label className="text-xs font-bold text-slate-400 uppercase">Division</label>
+            <label className="text-xs font-bold text-slate-400 uppercase flex items-center gap-1">
+              Division <span className="text-red-500">*</span>
+            </label>
             <select 
               className="w-full border-b-2 border-slate-200 focus:border-blue-500 outline-none py-1 transition-colors bg-transparent cursor-pointer"
               value={data.info.division}
@@ -328,7 +339,9 @@ const App: React.FC = () => {
             </select>
           </div>
           <div className="space-y-1">
-            <label className="text-xs font-bold text-slate-400 uppercase">School</label>
+            <label className="text-xs font-bold text-slate-400 uppercase flex items-center gap-1">
+              School <span className="text-red-500">*</span>
+            </label>
             <input 
               className="w-full border-b-2 border-slate-200 focus:border-blue-500 outline-none py-1 transition-colors bg-transparent"
               value={data.info.school}
@@ -337,7 +350,9 @@ const App: React.FC = () => {
             />
           </div>
           <div className="space-y-1">
-            <label className="text-xs font-bold text-slate-400 uppercase">Candidate Name</label>
+            <label className="text-xs font-bold text-slate-400 uppercase flex items-center gap-1">
+              Candidate Name <span className="text-red-500">*</span>
+            </label>
             <input 
               className="w-full border-b-2 border-slate-200 focus:border-blue-500 outline-none py-1 transition-colors bg-transparent font-semibold"
               value={data.info.name}
