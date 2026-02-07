@@ -1,5 +1,5 @@
 
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import Swal from 'https://esm.sh/sweetalert2@11';
 import { 
   CandidateInfo, 
@@ -16,6 +16,9 @@ import {
   InterviewScore
 } from './types';
 import { SCORING_CONSTANTS, RANK_MAP, DEPED_NCR_DIVISIONS } from './constants';
+
+const LOCAL_STORAGE_KEY = 'ocj_submitted_records';
+const SPLASH_IMAGE_URL = 'https://i.ibb.co/hxvXvtpJ/image.png';
 
 const initialState: ScoringState = {
   info: { division: '', school: '', name: '' },
@@ -51,13 +54,71 @@ const Card: React.FC<{ children: React.ReactNode; className?: string }> = ({ chi
   </div>
 );
 
+const SplashScreen: React.FC<{ isExiting: boolean }> = ({ isExiting }) => (
+  <div className={`fixed inset-0 z-[100] flex items-center justify-center bg-white transition-all duration-700 ease-in-out ${isExiting ? 'opacity-0 -translate-y-8 pointer-events-none' : 'opacity-100'}`}>
+    <div className="relative flex flex-col items-center gap-6 p-8 text-center">
+      <div className="relative group">
+        <div className="absolute -inset-4 bg-blue-50 rounded-full blur-2xl opacity-50 group-hover:opacity-75 transition duration-1000"></div>
+        <img 
+          src={SPLASH_IMAGE_URL} 
+          alt="OCJ Logo" 
+          className="relative w-48 h-48 md:w-64 md:h-64 object-contain animate-[pulse_3s_infinite]"
+          onError={(e) => {
+            const target = e.target as HTMLImageElement;
+            target.style.display = 'none';
+          }}
+        />
+      </div>
+      <div className="space-y-2">
+        <h2 className="text-2xl font-black text-slate-900 uppercase tracking-widest animate-[fade-in_1s_ease-out]">
+          Outstanding Campus Journalist
+        </h2>
+        <div className="h-1 w-12 bg-blue-600 mx-auto rounded-full"></div>
+        <p className="text-slate-400 font-bold text-xs uppercase tracking-[0.3em]">Evaluation System</p>
+      </div>
+    </div>
+  </div>
+);
+
 const App: React.FC = () => {
+  const [showSplash, setShowSplash] = useState(true);
+  const [isSplashExiting, setIsSplashExiting] = useState(false);
   const [data, setData] = useState<ScoringState>(initialState);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [submitStatus, setSubmitStatus] = useState<'idle' | 'success' | 'error'>('idle');
-  const [submittedCandidates, setSubmittedCandidates] = useState<string[]>([]);
+  
+  // Initialize from LocalStorage to remember duplicates across sessions
+  const [submittedCandidates, setSubmittedCandidates] = useState<string[]>(() => {
+    const saved = localStorage.getItem(LOCAL_STORAGE_KEY);
+    return saved ? JSON.parse(saved) : [];
+  });
   
   const SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbyUz-D9I7QDYTbaZfFSQd9yt3oOO-Ai9rPA5xofkUOPJs39S_9e7DbjT5s-_JwDiEjGxQ/exec';
+
+  // Splash Screen Logic
+  useEffect(() => {
+    const exitTimer = setTimeout(() => setIsSplashExiting(true), 2500);
+    const removeTimer = setTimeout(() => setShowSplash(false), 3200);
+    return () => {
+      clearTimeout(exitTimer);
+      clearTimeout(removeTimer);
+    };
+  }, []);
+
+  // Update local storage when the registry changes
+  useEffect(() => {
+    localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(submittedCandidates));
+  }, [submittedCandidates]);
+
+  const currentCandidateKey = useMemo(() => {
+    return `${data.info.name.trim()}|${data.info.school.trim()}|${data.info.division.trim()}`.toLowerCase();
+  }, [data.info]);
+
+  const isDuplicate = useMemo(() => {
+    const { name, school, division } = data.info;
+    if (!name.trim() || !school.trim() || !division.trim()) return false;
+    return submittedCandidates.includes(currentCandidateKey);
+  }, [currentCandidateKey, submittedCandidates]);
 
   const interviewTotal = useMemo(() => {
     return (Object.values(data.interview) as number[]).reduce((a, b) => a + b, 0);
@@ -196,23 +257,22 @@ const App: React.FC = () => {
 
       Swal.fire({
         icon: 'warning',
-        title: 'Required Fields',
-        text: `Please provide: ${missing.join(", ")} before saving.`,
+        title: 'Validation Error',
+        text: `Mandatory fields missing: ${missing.join(", ")}`,
         confirmButtonColor: '#2563eb'
       });
       return;
     }
 
-    // STRICT Duplicate Check: Do not allow to proceed if already in session history
-    const candidateKey = `${candidateName}|${schoolName}|${divisionName}`.toLowerCase();
-    if (submittedCandidates.includes(candidateKey)) {
+    // STRICT DUPLICATE BLOCK
+    if (isDuplicate) {
       Swal.fire({
         icon: 'error',
-        title: 'Duplicate Entry',
-        text: `Candidate "${candidateName}" has already been saved. Duplicate entries are not allowed in this session.`,
+        title: 'Blocked: Duplicate Record',
+        text: `The candidate "${candidateName}" has already been processed and saved. The system will not accept multiple entries for the same person.`,
         confirmButtonColor: '#ef4444'
       });
-      return; // STOP execution
+      return;
     }
 
     setIsSubmitting(true);
@@ -220,7 +280,7 @@ const App: React.FC = () => {
 
     Swal.fire({
       title: 'Saving...',
-      text: 'Synchronizing with database',
+      text: 'Writing to official records',
       allowOutsideClick: false,
       didOpen: () => {
         Swal.showLoading();
@@ -254,12 +314,13 @@ const App: React.FC = () => {
       });
 
       setSubmitStatus('success');
-      setSubmittedCandidates(prev => [...prev, candidateKey]);
+      // Add to registry
+      setSubmittedCandidates(prev => [...prev, currentCandidateKey]);
 
       Swal.fire({
         icon: 'success',
-        title: 'Saved Successfully',
-        text: `The records for ${candidateName} are now safe in the database.`,
+        title: 'Entry Recorded',
+        text: `${candidateName}'s score has been securely saved.`,
         timer: 2000,
         showConfirmButton: false
       });
@@ -272,8 +333,8 @@ const App: React.FC = () => {
       
       Swal.fire({
         icon: 'error',
-        title: 'Connection Error',
-        text: 'Failed to sync with the database. Please check your internet connection.',
+        title: 'Sync Interrupted',
+        text: 'Failed to reach the database. Please check your connection and try again.',
         confirmButtonColor: '#ef4444'
       });
     } finally {
@@ -283,390 +344,417 @@ const App: React.FC = () => {
 
   const handleManualReset = () => {
     Swal.fire({
-      title: 'Clear form?',
-      text: "All progress for the current candidate will be lost.",
+      title: 'Discard entry?',
+      text: "Current unsaved scores will be permanently cleared.",
       icon: 'question',
       showCancelButton: true,
-      confirmButtonColor: '#2563eb',
-      cancelButtonColor: '#94a3b8',
-      confirmButtonText: 'Yes, clear it'
+      confirmButtonColor: '#64748b',
+      cancelButtonColor: '#cbd5e1',
+      confirmButtonText: 'Clear Form'
     }).then((result) => {
       if (result.isConfirmed) {
         resetForm();
-        Swal.fire({
-          title: 'Form Reset',
-          icon: 'success',
-          timer: 800,
-          showConfirmButton: false
-        });
+      }
+    });
+  };
+
+  const handleClearHistory = () => {
+    Swal.fire({
+      title: 'Reset Session History?',
+      text: "This will allow you to re-save candidates you previously saved. Use with caution.",
+      icon: 'warning',
+      showCancelButton: true,
+      confirmButtonColor: '#ef4444',
+      confirmButtonText: 'Yes, clear registry'
+    }).then((result) => {
+      if (result.isConfirmed) {
+        setSubmittedCandidates([]);
+        localStorage.removeItem(LOCAL_STORAGE_KEY);
+        Swal.fire('Registry Reset', '', 'success');
       }
     });
   };
 
   return (
-    <div className="max-w-5xl mx-auto px-4 py-12">
-      <div className="text-center mb-12">
-        <h1 className="text-3xl font-black text-slate-900 mb-2 uppercase tracking-tighter">
-          Search for Outstanding Campus Journalists
-        </h1>
-        <p className="text-slate-500 font-medium italic">Official Digital Scoring Sheet (Google Sheets Integrated)</p>
-        <div className="mt-4 flex justify-center gap-4">
-          <span className="text-xs font-bold text-slate-400 uppercase tracking-widest bg-slate-100 px-3 py-1 rounded-full">
-            Saved This Session: {submittedCandidates.length}
-          </span>
-        </div>
-      </div>
-
-      <Card>
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-          <div className="space-y-1">
-            <label className="text-xs font-bold text-slate-400 uppercase flex items-center gap-1">
-              Division <span className="text-red-500 font-bold">*</span>
-            </label>
-            <select 
-              className="w-full border-b-2 border-slate-200 focus:border-blue-500 outline-none py-1 transition-colors bg-transparent cursor-pointer"
-              value={data.info.division}
-              onChange={e => handleInfoChange('division', e.target.value)}
+    <>
+      {showSplash && <SplashScreen isExiting={isSplashExiting} />}
+      
+      <div className={`max-w-5xl mx-auto px-4 py-12 transition-opacity duration-1000 ${showSplash ? 'opacity-0 h-screen overflow-hidden' : 'opacity-100'}`}>
+        <div className="text-center mb-12">
+          <h1 className="text-3xl font-black text-slate-900 mb-2 uppercase tracking-tighter">
+            Search for Outstanding Campus Journalists
+          </h1>
+          <p className="text-slate-500 font-medium italic">Official Digital Scoring Sheet (Strict Duplicate Control)</p>
+          <div className="mt-4 flex justify-center gap-4">
+            <button 
+              onClick={handleClearHistory}
+              className="text-[10px] font-bold text-slate-400 uppercase tracking-widest bg-slate-100 hover:bg-slate-200 px-3 py-1 rounded-full transition-colors"
             >
-              <option value="">Select Division (NCR)</option>
-              {DEPED_NCR_DIVISIONS.map(div => (
-                <option key={div} value={div}>{div}</option>
-              ))}
-            </select>
-          </div>
-          <div className="space-y-1">
-            <label className="text-xs font-bold text-slate-400 uppercase flex items-center gap-1">
-              School <span className="text-red-500 font-bold">*</span>
-            </label>
-            <input 
-              className="w-full border-b-2 border-slate-200 focus:border-blue-500 outline-none py-1 transition-colors bg-transparent"
-              value={data.info.school}
-              onChange={e => handleInfoChange('school', e.target.value)}
-              placeholder="Enter School Name"
-            />
-          </div>
-          <div className="space-y-1">
-            <label className="text-xs font-bold text-slate-400 uppercase flex items-center gap-1">
-              Candidate Name <span className="text-red-500 font-bold">*</span>
-            </label>
-            <input 
-              className="w-full border-b-2 border-slate-200 focus:border-blue-500 outline-none py-1 transition-colors bg-transparent font-semibold"
-              value={data.info.name}
-              onChange={e => handleInfoChange('name', e.target.value)}
-              placeholder="Full Legal Name"
-            />
-          </div>
-        </div>
-      </Card>
-
-      <Card>
-        <SectionHeader title="A. Academic Standing" subtitle="In all learning areas (latest grading period)" />
-        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-3">
-          {Object.entries(SCORING_CONSTANTS.ACADEMIC).map(([rank, pts]) => (
-            <button
-              key={rank}
-              onClick={() => handleAcademicChange(rank as any)}
-              className={`p-3 rounded-lg border text-sm font-medium transition-all ${
-                data.academic.rank === rank 
-                  ? 'bg-blue-600 border-blue-600 text-white shadow-md' 
-                  : 'bg-white border-slate-200 text-slate-600 hover:border-blue-300'
-              }`}
-            >
-              <div>{rank}</div>
-              <div className="text-xs opacity-70">{pts} Points</div>
+              Records in Registry: {submittedCandidates.length} (Clear)
             </button>
-          ))}
-        </div>
-      </Card>
-
-      <Card>
-        <SectionHeader title="Achievements in Campus Journalism" subtitle="Individual & Group Contests" />
-        <div className="space-y-8">
-          <div>
-            <h3 className="text-sm font-bold text-slate-400 uppercase mb-4 tracking-widest">1. Individual Contests</h3>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <select 
-                className="w-full p-3 rounded-lg border border-slate-200 outline-none focus:ring-2 focus:ring-blue-500"
-                value={data.individualContests.level}
-                onChange={e => handleContestChange('individualContests', 'level', e.target.value)}
-              >
-                <option value="None">Select Level</option>
-                <option value="National">National</option>
-                <option value="Regional">Regional</option>
-                <option value="Division">Division</option>
-              </select>
-              <select 
-                className="w-full p-3 rounded-lg border border-slate-200 outline-none focus:ring-2 focus:ring-blue-500"
-                value={data.individualContests.rank}
-                onChange={e => handleContestChange('individualContests', 'rank', e.target.value)}
-              >
-                <option value="None">Select Rank</option>
-                <option value="1ST">1st Place</option>
-                <option value="2ND">2nd Place</option>
-                <option value="3RD">3rd Place</option>
-                <option value="4TH">4th Place</option>
-                <option value="5TH">5th Place</option>
-              </select>
-            </div>
-            <div className="mt-2 text-right">
-              <span className="text-sm text-slate-500">Earned: </span>
-              <span className="font-bold text-blue-600">{data.individualContests.points} Points</span>
-            </div>
-          </div>
-
-          <div>
-            <h3 className="text-sm font-bold text-slate-400 uppercase mb-4 tracking-widest">2. Group Contests</h3>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <select 
-                className="w-full p-3 rounded-lg border border-slate-200 outline-none focus:ring-2 focus:ring-blue-500"
-                value={data.groupContests.level}
-                onChange={e => handleContestChange('groupContests', 'level', e.target.value)}
-              >
-                <option value="None">Select Level</option>
-                <option value="National">National</option>
-                <option value="Regional">Regional</option>
-                <option value="Division">Division</option>
-              </select>
-              <select 
-                className="w-full p-3 rounded-lg border border-slate-200 outline-none focus:ring-2 focus:ring-blue-500"
-                value={data.groupContests.rank}
-                onChange={e => handleContestChange('groupContests', 'rank', e.target.value)}
-              >
-                <option value="None">Select Rank</option>
-                <option value="1ST">1st Place</option>
-                <option value="2ND">2nd Place</option>
-                <option value="3RD">3rd Place</option>
-                <option value="4TH">4th Place</option>
-                <option value="5TH">5th Place</option>
-              </select>
-            </div>
-            <div className="mt-2 text-right">
-              <span className="text-sm text-slate-500">Earned: </span>
-              <span className="font-bold text-blue-600">{data.groupContests.points} Points</span>
-            </div>
-          </div>
-
-          <div>
-            <h3 className="text-sm font-bold text-slate-400 uppercase mb-4 tracking-widest">Special Awards in Group Contests</h3>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <select 
-                className="w-full p-3 rounded-lg border border-slate-200 outline-none focus:ring-2 focus:ring-blue-500"
-                value={data.specialAwards.level}
-                onChange={e => handleSpecialAwardChange('level', e.target.value)}
-              >
-                <option value="None">Select Level</option>
-                <option value="National">National</option>
-                <option value="Regional">Regional</option>
-                <option value="Division">Division</option>
-              </select>
-              <select 
-                className="w-full p-3 rounded-lg border border-slate-200 outline-none focus:ring-2 focus:ring-blue-500"
-                value={data.specialAwards.rank}
-                onChange={e => handleSpecialAwardChange('rank', e.target.value)}
-              >
-                <option value="None">Select Rank</option>
-                <option value="1ST">1st Place</option>
-                <option value="2ND">2nd Place</option>
-                <option value="3RD">3rd Place</option>
-                <option value="4TH">4th Place</option>
-                <option value="5TH">5th Place</option>
-              </select>
-            </div>
-            <div className="mt-2 text-right">
-              <span className="text-sm text-slate-500">Earned: </span>
-              <span className="font-bold text-blue-600">{data.specialAwards.points} Points</span>
-            </div>
           </div>
         </div>
-      </Card>
 
-      <Card>
-        <SectionHeader title="Leadership, Innovations, and Published Works" />
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-          <div className="space-y-4">
-            <h3 className="text-sm font-bold text-slate-700">School Publication Position</h3>
-            <select 
-              className="w-full p-3 rounded-lg border border-slate-200 bg-slate-50"
-              value={data.pubLeadership.position}
-              onChange={e => handlePubLeadershipChange(e.target.value as any)}
-            >
-              <option value="None">None</option>
-              {Object.keys(SCORING_CONSTANTS.PUB_LEADERSHIP).filter(k => k !== 'None').map(pos => (
-                <option key={pos} value={pos}>{pos}</option>
-              ))}
-            </select>
-          </div>
-          <div className="space-y-4">
-            <h3 className="text-sm font-bold text-slate-700">Editors' Guild Leadership</h3>
-            <div className="grid grid-cols-2 gap-2">
+        <Card className={isDuplicate ? 'ring-2 ring-red-500 bg-red-50' : ''}>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+            <div className="space-y-1">
+              <label className="text-xs font-bold text-slate-400 uppercase flex items-center gap-1">
+                Division <span className="text-red-500 font-bold">*</span>
+              </label>
               <select 
-                className="w-full p-2 rounded-lg border border-slate-200 text-sm"
-                value={data.guildLeadership.position}
-                onChange={e => handleGuildLeadershipChange('position', e.target.value)}
+                className={`w-full border-b-2 outline-none py-1 transition-colors bg-transparent cursor-pointer ${isDuplicate ? 'border-red-500 text-red-900' : 'border-slate-200 focus:border-blue-500'}`}
+                value={data.info.division}
+                onChange={e => handleInfoChange('division', e.target.value)}
               >
-                <option value="None">Position</option>
-                <option value="President">President</option>
-                <option value="Vice President">Vice President</option>
-                <option value="Other positions recognized by DepEd">Other</option>
-              </select>
-              <select 
-                className="w-full p-2 rounded-lg border border-slate-200 text-sm"
-                value={data.guildLeadership.level}
-                onChange={e => handleGuildLeadershipChange('level', e.target.value)}
-              >
-                <option value="None">Level</option>
-                <option value="National">National</option>
-                <option value="Regional">Regional</option>
-                <option value="Division">Division</option>
+                <option value="">Select Division (NCR)</option>
+                {DEPED_NCR_DIVISIONS.map(div => (
+                  <option key={div} value={div}>{div}</option>
+                ))}
               </select>
             </div>
-          </div>
-          <div className="space-y-4">
-            <h3 className="text-sm font-bold text-slate-700">Innovations and Advocacies</h3>
-            <select 
-              className="w-full p-3 rounded-lg border border-slate-200 bg-slate-50"
-              value={data.innovation.level}
-              onChange={e => handleInnovationChange(e.target.value as any)}
-            >
-              <option value="None">None</option>
-              <option value="National">National (30 pts)</option>
-              <option value="Regional">Regional (25 pts)</option>
-              <option value="Division">Division (20 pts)</option>
-              <option value="District">District (15 pts)</option>
-              <option value="School">School (10 pts)</option>
-            </select>
-          </div>
-          <div className="space-y-4">
-            <h3 className="text-sm font-bold text-slate-700">Published Works</h3>
-            <select 
-              className="w-full p-3 rounded-lg border border-slate-200 bg-slate-50"
-              value={data.publishedWorks.level}
-              onChange={e => handlePublishedWorksChange(e.target.value as any)}
-            >
-              <option value="None">None</option>
-              <option value="National">National/Local Dailies (5 pts)</option>
-              <option value="Regional">Regional (3 pts)</option>
-              <option value="Division">Division (1 pt)</option>
-            </select>
-          </div>
-          <div className="space-y-4">
-            <h3 className="text-sm font-bold text-slate-700">Community & Extension Services</h3>
-            <div className="grid grid-cols-2 gap-2">
-              <select 
-                className="w-full p-2 rounded-lg border border-slate-200 text-sm"
-                value={data.communityService.role}
-                onChange={e => handleCommunityChange('role', e.target.value)}
-              >
-                <option value="None">Role</option>
-                <option value="COMMITTEE CHAIRPERSON">Chairperson</option>
-                <option value="FACILITATOR">Facilitator</option>
-              </select>
-              <select 
-                className="w-full p-2 rounded-lg border border-slate-200 text-sm"
-                value={data.communityService.level}
-                onChange={e => handleCommunityChange('level', e.target.value)}
-              >
-                <option value="None">Level</option>
-                <option value="National">National</option>
-                <option value="Regional">Regional</option>
-                <option value="Division">Division</option>
-              </select>
+            <div className="space-y-1">
+              <label className="text-xs font-bold text-slate-400 uppercase flex items-center gap-1">
+                School <span className="text-red-500 font-bold">*</span>
+              </label>
+              <input 
+                className={`w-full border-b-2 outline-none py-1 transition-colors bg-transparent ${isDuplicate ? 'border-red-500 text-red-900 placeholder-red-300' : 'border-slate-200 focus:border-blue-500'}`}
+                value={data.info.school}
+                onChange={e => handleInfoChange('school', e.target.value)}
+                placeholder="Enter School Name"
+              />
+            </div>
+            <div className="space-y-1">
+              <label className="text-xs font-bold text-slate-400 uppercase flex items-center gap-1">
+                Candidate Name <span className="text-red-500 font-bold">*</span>
+              </label>
+              <input 
+                className={`w-full border-b-2 outline-none py-1 transition-colors bg-transparent font-semibold ${isDuplicate ? 'border-red-500 text-red-900 placeholder-red-300' : 'border-slate-200 focus:border-blue-500'}`}
+                value={data.info.name}
+                onChange={e => handleInfoChange('name', e.target.value)}
+                placeholder="Full Legal Name"
+              />
             </div>
           </div>
-          <div className="space-y-4">
-            <h3 className="text-sm font-bold text-slate-700">Trainings Attended (DepEd Recognized)</h3>
-            <select 
-              className="w-full p-3 rounded-lg border border-slate-200 bg-slate-50"
-              value={data.trainings.level}
-              onChange={e => handleTrainingsChange(e.target.value as any)}
-            >
-              <option value="None">None</option>
-              <option value="National">National (5 pts)</option>
-              <option value="Regional">Regional (4 pts)</option>
-              <option value="Division">Division (3 pts)</option>
-              <option value="School/District">School/District (2 pts)</option>
-            </select>
-          </div>
-        </div>
-      </Card>
+          {isDuplicate && (
+            <div className="mt-4 p-2 bg-red-100 border border-red-200 rounded text-red-700 text-xs font-bold flex items-center gap-2 animate-pulse">
+              <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20"><path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clipRule="evenodd"></path></svg>
+              DUPLICATE DETECTED: This candidate from this school/division has already been saved.
+            </div>
+          )}
+        </Card>
 
-      <Card>
-        <SectionHeader title="Panel Interview" subtitle="10 Points Total (Max 2 pts per category)" />
-        <div className="space-y-4">
-          {[
-            { id: 'journalismPrinciples', label: 'Journalism Principles and Ethics' },
-            { id: 'leadershipPotential', label: 'Leadership / Mentorship Potential' },
-            { id: 'experienceEngagement', label: 'Experience and Engagement in Campus Journalism' },
-            { id: 'commitmentGrowth', label: 'Commitment to Growth and Learning' },
-            { id: 'communicationSkills', label: 'Communication Skills' },
-          ].map((item) => (
-            <div key={item.id} className="flex flex-col md:flex-row md:items-center justify-between p-4 rounded-lg bg-slate-50 border border-slate-100 gap-4">
-              <span className="text-sm font-semibold text-slate-700">{item.label}</span>
-              <div className="flex items-center gap-4">
-                <input 
-                  type="number"
-                  step="0.1"
-                  min="0"
-                  max="2"
-                  className="w-24 p-2 rounded border border-slate-200 outline-none focus:ring-2 focus:ring-blue-500"
-                  value={data.interview[item.id as keyof InterviewScore]}
-                  onChange={e => handleInterviewChange(item.id as any, e.target.value)}
-                />
-                <span className="text-xs text-slate-400">/ 2.0</span>
-              </div>
-            </div>
-          ))}
-        </div>
-      </Card>
-
-      <div className="fixed bottom-0 left-0 right-0 bg-white border-t border-slate-200 shadow-2xl p-4 no-print z-50">
-        <div className="max-w-5xl mx-auto flex items-center justify-between">
-          <div className="hidden lg:block">
-            <div className="flex items-center gap-2 mb-1">
-              <p className="text-xs font-bold text-slate-400 uppercase">Current Candidate</p>
-              {submitStatus === 'success' && <span className="text-[10px] bg-emerald-100 text-emerald-700 px-2 py-0.5 rounded-full font-bold">Ready for next</span>}
-            </div>
-            <p className="text-sm font-bold text-slate-800 truncate max-w-[200px]">{data.info.name || 'Waiting for input...'}</p>
-          </div>
-          
-          <div className="flex items-center gap-4 md:gap-8">
-            <div className="text-right">
-              <p className="text-xs font-bold text-slate-400 uppercase">Grand Total</p>
-              <p className="text-2xl md:text-3xl font-black text-blue-600 tracking-tighter leading-none">{grandTotal.toFixed(2)}</p>
-            </div>
-            
-            <div className="flex items-center gap-2">
-              <button 
-                onClick={submitToDatabase}
-                disabled={isSubmitting}
-                className={`flex items-center gap-2 px-6 md:px-8 py-3 rounded-xl font-bold transition-all shadow-lg ${
-                  isSubmitting 
-                    ? 'bg-slate-100 text-slate-400 cursor-not-allowed' 
-                    : 'bg-emerald-600 hover:bg-emerald-700 text-white shadow-emerald-100'
+        <Card>
+          <SectionHeader title="A. Academic Standing" subtitle="In all learning areas (latest grading period)" />
+          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-3">
+            {Object.entries(SCORING_CONSTANTS.ACADEMIC).map(([rank, pts]) => (
+              <button
+                key={rank}
+                onClick={() => handleAcademicChange(rank as any)}
+                className={`p-3 rounded-lg border text-sm font-medium transition-all ${
+                  data.academic.rank === rank 
+                    ? 'bg-blue-600 border-blue-600 text-white shadow-md' 
+                    : 'bg-white border-slate-200 text-slate-600 hover:border-blue-300'
                 }`}
               >
-                {isSubmitting ? (
-                  <svg className="animate-spin h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>
-                ) : (
-                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M8 7H5a2 2 0 00-2 2v9a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-3m-1 4l-3 3m0 0l-3-3m3 3V4"></path></svg>
-                )}
-                <span className="font-bold">{isSubmitting ? 'Saving...' : 'Save Data'}</span>
+                <div>{rank}</div>
+                <div className="text-xs opacity-70">{pts} Points</div>
               </button>
+            ))}
+          </div>
+        </Card>
 
-              <button 
-                onClick={handleManualReset}
-                className="bg-slate-200 text-slate-600 p-3 rounded-xl hover:bg-slate-300 transition-colors"
-                title="Reset Form"
+        <Card>
+          <SectionHeader title="Achievements in Campus Journalism" subtitle="Individual & Group Contests" />
+          <div className="space-y-8">
+            <div>
+              <h3 className="text-sm font-bold text-slate-400 uppercase mb-4 tracking-widest">1. Individual Contests</h3>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <select 
+                  className="w-full p-3 rounded-lg border border-slate-200 outline-none focus:ring-2 focus:ring-blue-500"
+                  value={data.individualContests.level}
+                  onChange={e => handleContestChange('individualContests', 'level', e.target.value)}
+                >
+                  <option value="None">Select Level</option>
+                  <option value="National">National</option>
+                  <option value="Regional">Regional</option>
+                  <option value="Division">Division</option>
+                </select>
+                <select 
+                  className="w-full p-3 rounded-lg border border-slate-200 outline-none focus:ring-2 focus:ring-blue-500"
+                  value={data.individualContests.rank}
+                  onChange={e => handleContestChange('individualContests', 'rank', e.target.value)}
+                >
+                  <option value="None">Select Rank</option>
+                  <option value="1ST">1st Place</option>
+                  <option value="2ND">2nd Place</option>
+                  <option value="3RD">3rd Place</option>
+                  <option value="4TH">4th Place</option>
+                  <option value="5TH">5th Place</option>
+                </select>
+              </div>
+              <div className="mt-2 text-right">
+                <span className="text-sm text-slate-500">Earned: </span>
+                <span className="font-bold text-blue-600">{data.individualContests.points} Points</span>
+              </div>
+            </div>
+
+            <div>
+              <h3 className="text-sm font-bold text-slate-400 uppercase mb-4 tracking-widest">2. Group Contests</h3>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <select 
+                  className="w-full p-3 rounded-lg border border-slate-200 outline-none focus:ring-2 focus:ring-blue-500"
+                  value={data.groupContests.level}
+                  onChange={e => handleContestChange('groupContests', 'level', e.target.value)}
+                >
+                  <option value="None">Select Level</option>
+                  <option value="National">National</option>
+                  <option value="Regional">Regional</option>
+                  <option value="Division">Division</option>
+                </select>
+                <select 
+                  className="w-full p-3 rounded-lg border border-slate-200 outline-none focus:ring-2 focus:ring-blue-500"
+                  value={data.groupContests.rank}
+                  onChange={e => handleContestChange('groupContests', 'rank', e.target.value)}
+                >
+                  <option value="None">Select Rank</option>
+                  <option value="1ST">1st Place</option>
+                  <option value="2ND">2nd Place</option>
+                  <option value="3RD">3rd Place</option>
+                  <option value="4TH">4th Place</option>
+                  <option value="5TH">5th Place</option>
+                </select>
+              </div>
+              <div className="mt-2 text-right">
+                <span className="text-sm text-slate-500">Earned: </span>
+                <span className="font-bold text-blue-600">{data.groupContests.points} Points</span>
+              </div>
+            </div>
+
+            <div>
+              <h3 className="text-sm font-bold text-slate-400 uppercase mb-4 tracking-widest">Special Awards in Group Contests</h3>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <select 
+                  className="w-full p-3 rounded-lg border border-slate-200 outline-none focus:ring-2 focus:ring-blue-500"
+                  value={data.specialAwards.level}
+                  onChange={e => handleSpecialAwardChange('level', e.target.value)}
+                >
+                  <option value="None">Select Level</option>
+                  <option value="National">National</option>
+                  <option value="Regional">Regional</option>
+                  <option value="Division">Division</option>
+                </select>
+                <select 
+                  className="w-full p-3 rounded-lg border border-slate-200 outline-none focus:ring-2 focus:ring-blue-500"
+                  value={data.specialAwards.rank}
+                  onChange={e => handleSpecialAwardChange('rank', e.target.value)}
+                >
+                  <option value="None">Select Rank</option>
+                  <option value="1ST">1st Place</option>
+                  <option value="2ND">2nd Place</option>
+                  <option value="3RD">3rd Place</option>
+                  <option value="4TH">4th Place</option>
+                  <option value="5TH">5th Place</option>
+                </select>
+              </div>
+              <div className="mt-2 text-right">
+                <span className="text-sm text-slate-500">Earned: </span>
+                <span className="font-bold text-blue-600">{data.specialAwards.points} Points</span>
+              </div>
+            </div>
+          </div>
+        </Card>
+
+        <Card>
+          <SectionHeader title="Leadership, Innovations, and Published Works" />
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+            <div className="space-y-4">
+              <h3 className="text-sm font-bold text-slate-700">School Publication Position</h3>
+              <select 
+                className="w-full p-3 rounded-lg border border-slate-200 bg-slate-50"
+                value={data.pubLeadership.position}
+                onChange={e => handlePubLeadershipChange(e.target.value as any)}
               >
-                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg>
-              </button>
+                <option value="None">None</option>
+                {Object.keys(SCORING_CONSTANTS.PUB_LEADERSHIP).filter(k => k !== 'None').map(pos => (
+                  <option key={pos} value={pos}>{pos}</option>
+                ))}
+              </select>
+            </div>
+            <div className="space-y-4">
+              <h3 className="text-sm font-bold text-slate-700">Editors' Guild Leadership</h3>
+              <div className="grid grid-cols-2 gap-2">
+                <select 
+                  className="w-full p-2 rounded-lg border border-slate-200 text-sm"
+                  value={data.guildLeadership.position}
+                  onChange={e => handleGuildLeadershipChange('position', e.target.value)}
+                >
+                  <option value="None">Position</option>
+                  <option value="President">President</option>
+                  <option value="Vice President">Vice President</option>
+                  <option value="Other positions recognized by DepEd">Other</option>
+                </select>
+                <select 
+                  className="w-full p-2 rounded-lg border border-slate-200 text-sm"
+                  value={data.guildLeadership.level}
+                  onChange={e => handleGuildLeadershipChange('level', e.target.value)}
+                >
+                  <option value="None">Level</option>
+                  <option value="National">National</option>
+                  <option value="Regional">Regional</option>
+                  <option value="Division">Division</option>
+                </select>
+              </div>
+            </div>
+            <div className="space-y-4">
+              <h3 className="text-sm font-bold text-slate-700">Innovations and Advocacies</h3>
+              <select 
+                className="w-full p-3 rounded-lg border border-slate-200 bg-slate-50"
+                value={data.innovation.level}
+                onChange={e => handleInnovationChange(e.target.value as any)}
+              >
+                <option value="None">None</option>
+                <option value="National">National (30 pts)</option>
+                <option value="Regional">Regional (25 pts)</option>
+                <option value="Division">Division (20 pts)</option>
+                <option value="District">District (15 pts)</option>
+                <option value="School">School (10 pts)</option>
+              </select>
+            </div>
+            <div className="space-y-4">
+              <h3 className="text-sm font-bold text-slate-700">Published Works</h3>
+              <select 
+                className="w-full p-3 rounded-lg border border-slate-200 bg-slate-50"
+                value={data.publishedWorks.level}
+                onChange={e => handlePublishedWorksChange(e.target.value as any)}
+              >
+                <option value="None">None</option>
+                <option value="National">National/Local Dailies (5 pts)</option>
+                <option value="Regional">Regional (3 pts)</option>
+                <option value="Division">Division (1 pt)</option>
+              </select>
+            </div>
+            <div className="space-y-4">
+              <h3 className="text-sm font-bold text-slate-700">Community & Extension Services</h3>
+              <div className="grid grid-cols-2 gap-2">
+                <select 
+                  className="w-full p-2 rounded-lg border border-slate-200 text-sm"
+                  value={data.communityService.role}
+                  onChange={e => handleCommunityChange('role', e.target.value)}
+                >
+                  <option value="None">Role</option>
+                  <option value="COMMITTEE CHAIRPERSON">Chairperson</option>
+                  <option value="FACILITATOR">Facilitator</option>
+                </select>
+                <select 
+                  className="w-full p-2 rounded-lg border border-slate-200 text-sm"
+                  value={data.communityService.level}
+                  onChange={e => handleCommunityChange('level', e.target.value)}
+                >
+                  <option value="None">Level</option>
+                  <option value="National">National</option>
+                  <option value="Regional">Regional</option>
+                  <option value="Division">Division</option>
+                </select>
+              </div>
+            </div>
+            <div className="space-y-4">
+              <h3 className="text-sm font-bold text-slate-700">Trainings Attended (DepEd Recognized)</h3>
+              <select 
+                className="w-full p-3 rounded-lg border border-slate-200 bg-slate-50"
+                value={data.trainings.level}
+                onChange={e => handleTrainingsChange(e.target.value as any)}
+              >
+                <option value="None">None</option>
+                <option value="National">National (5 pts)</option>
+                <option value="Regional">Regional (4 pts)</option>
+                <option value="Division">Division (3 pts)</option>
+                <option value="School/District">School/District (2 pts)</option>
+              </select>
+            </div>
+          </div>
+        </Card>
+
+        <Card>
+          <SectionHeader title="Panel Interview" subtitle="10 Points Total (Max 2 pts per category)" />
+          <div className="space-y-4">
+            {[
+              { id: 'journalismPrinciples', label: 'Journalism Principles and Ethics' },
+              { id: 'leadershipPotential', label: 'Leadership / Mentorship Potential' },
+              { id: 'experienceEngagement', label: 'Experience and Engagement in Campus Journalism' },
+              { id: 'commitmentGrowth', label: 'Commitment to Growth and Learning' },
+              { id: 'communicationSkills', label: 'Communication Skills' },
+            ].map((item) => (
+              <div key={item.id} className="flex flex-col md:flex-row md:items-center justify-between p-4 rounded-lg bg-slate-50 border border-slate-100 gap-4">
+                <span className="text-sm font-semibold text-slate-700">{item.label}</span>
+                <div className="flex items-center gap-4">
+                  <input 
+                    type="number"
+                    step="0.1"
+                    min="0"
+                    max="2"
+                    className="w-24 p-2 rounded border border-slate-200 outline-none focus:ring-2 focus:ring-blue-500"
+                    value={data.interview[item.id as keyof InterviewScore]}
+                    onChange={e => handleInterviewChange(item.id as any, e.target.value)}
+                  />
+                  <span className="text-xs text-slate-400">/ 2.0</span>
+                </div>
+              </div>
+            ))}
+          </div>
+        </Card>
+
+        <div className="fixed bottom-0 left-0 right-0 bg-white border-t border-slate-200 shadow-2xl p-4 no-print z-50">
+          <div className="max-w-5xl mx-auto flex items-center justify-between">
+            <div className="hidden lg:block">
+              <div className="flex items-center gap-2 mb-1">
+                <p className="text-xs font-bold text-slate-400 uppercase">Status</p>
+                {isDuplicate && <span className="text-[10px] bg-red-100 text-red-700 px-2 py-0.5 rounded-full font-bold uppercase animate-pulse">Already Existing</span>}
+                {!isDuplicate && submitStatus === 'success' && <span className="text-[10px] bg-emerald-100 text-emerald-700 px-2 py-0.5 rounded-full font-bold">Ready</span>}
+              </div>
+              <p className={`text-sm font-bold truncate max-w-[200px] ${isDuplicate ? 'text-red-500' : 'text-slate-800'}`}>
+                {data.info.name || 'Awaiting Input'}
+              </p>
+            </div>
+            
+            <div className="flex items-center gap-4 md:gap-8">
+              <div className="text-right">
+                <p className="text-xs font-bold text-slate-400 uppercase">Grand Total</p>
+                <p className="text-2xl md:text-3xl font-black text-blue-600 tracking-tighter leading-none">{grandTotal.toFixed(2)}</p>
+              </div>
+              
+              <div className="flex items-center gap-2">
+                <button 
+                  onClick={submitToDatabase}
+                  disabled={isSubmitting || isDuplicate}
+                  className={`flex items-center gap-2 px-6 md:px-8 py-3 rounded-xl font-bold transition-all shadow-lg ${
+                    isSubmitting || isDuplicate
+                      ? 'bg-slate-100 text-slate-400 cursor-not-allowed grayscale shadow-none' 
+                      : 'bg-emerald-600 hover:bg-emerald-700 text-white shadow-emerald-100'
+                  }`}
+                >
+                  {isSubmitting ? (
+                    <svg className="animate-spin h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>
+                  ) : (
+                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M8 7H5a2 2 0 00-2 2v9a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-3m-1 4l-3 3m0 0l-3-3m3 3V4"></path></svg>
+                  )}
+                  <span className="font-bold">{isSubmitting ? 'Syncing...' : isDuplicate ? 'Already Saved' : 'Save Entry'}</span>
+                </button>
+
+                <button 
+                  onClick={handleManualReset}
+                  className="bg-slate-200 text-slate-600 p-3 rounded-xl hover:bg-slate-300 transition-colors"
+                  title="Reset Workspace"
+                >
+                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg>
+                </button>
+              </div>
             </div>
           </div>
         </div>
-      </div>
 
-      <div className="h-32"></div>
-    </div>
+        <div className="h-32"></div>
+      </div>
+    </>
   );
 };
 
