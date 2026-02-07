@@ -196,27 +196,23 @@ const App: React.FC = () => {
 
       Swal.fire({
         icon: 'warning',
-        title: 'Required Information',
+        title: 'Required Fields',
         text: `Please provide: ${missing.join(", ")} before saving.`,
         confirmButtonColor: '#2563eb'
       });
       return;
     }
 
+    // STRICT Duplicate Check: Do not allow to proceed if already in session history
     const candidateKey = `${candidateName}|${schoolName}|${divisionName}`.toLowerCase();
     if (submittedCandidates.includes(candidateKey)) {
-      const result = await Swal.fire({
-        icon: 'info',
-        title: 'Duplicate Detected',
-        text: `The candidate "${candidateName}" from this school and division has already been saved in this session. Do you want to save it again?`,
-        showCancelButton: true,
-        confirmButtonText: 'Yes, Save Again',
-        cancelButtonText: 'Cancel',
-        confirmButtonColor: '#2563eb',
-        cancelButtonColor: '#94a3b8'
+      Swal.fire({
+        icon: 'error',
+        title: 'Duplicate Entry',
+        text: `Candidate "${candidateName}" has already been saved. Duplicate entries are not allowed in this session.`,
+        confirmButtonColor: '#ef4444'
       });
-
-      if (!result.isConfirmed) return;
+      return; // STOP execution
     }
 
     setIsSubmitting(true);
@@ -262,8 +258,8 @@ const App: React.FC = () => {
 
       Swal.fire({
         icon: 'success',
-        title: 'Saved!',
-        text: `Scores for ${candidateName} have been recorded.`,
+        title: 'Saved Successfully',
+        text: `The records for ${candidateName} are now safe in the database.`,
         timer: 2000,
         showConfirmButton: false
       });
@@ -276,8 +272,8 @@ const App: React.FC = () => {
       
       Swal.fire({
         icon: 'error',
-        title: 'Sync Failed',
-        text: 'There was an error saving the data. Please check your connection.',
+        title: 'Connection Error',
+        text: 'Failed to sync with the database. Please check your internet connection.',
         confirmButtonColor: '#ef4444'
       });
     } finally {
@@ -287,20 +283,20 @@ const App: React.FC = () => {
 
   const handleManualReset = () => {
     Swal.fire({
-      title: 'Are you sure?',
-      text: "This will clear all current scores and information.",
-      icon: 'warning',
+      title: 'Clear form?',
+      text: "All progress for the current candidate will be lost.",
+      icon: 'question',
       showCancelButton: true,
       confirmButtonColor: '#2563eb',
       cancelButtonColor: '#94a3b8',
-      confirmButtonText: 'Yes, clear it!'
+      confirmButtonText: 'Yes, clear it'
     }).then((result) => {
       if (result.isConfirmed) {
         resetForm();
         Swal.fire({
-          title: 'Cleared!',
+          title: 'Form Reset',
           icon: 'success',
-          timer: 1000,
+          timer: 800,
           showConfirmButton: false
         });
       }
@@ -316,7 +312,7 @@ const App: React.FC = () => {
         <p className="text-slate-500 font-medium italic">Official Digital Scoring Sheet (Google Sheets Integrated)</p>
         <div className="mt-4 flex justify-center gap-4">
           <span className="text-xs font-bold text-slate-400 uppercase tracking-widest bg-slate-100 px-3 py-1 rounded-full">
-            Session History: {submittedCandidates.length} Saved
+            Saved This Session: {submittedCandidates.length}
           </span>
         </div>
       </div>
@@ -325,7 +321,7 @@ const App: React.FC = () => {
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
           <div className="space-y-1">
             <label className="text-xs font-bold text-slate-400 uppercase flex items-center gap-1">
-              Division <span className="text-red-500">*</span>
+              Division <span className="text-red-500 font-bold">*</span>
             </label>
             <select 
               className="w-full border-b-2 border-slate-200 focus:border-blue-500 outline-none py-1 transition-colors bg-transparent cursor-pointer"
@@ -340,24 +336,24 @@ const App: React.FC = () => {
           </div>
           <div className="space-y-1">
             <label className="text-xs font-bold text-slate-400 uppercase flex items-center gap-1">
-              School <span className="text-red-500">*</span>
+              School <span className="text-red-500 font-bold">*</span>
             </label>
             <input 
               className="w-full border-b-2 border-slate-200 focus:border-blue-500 outline-none py-1 transition-colors bg-transparent"
               value={data.info.school}
               onChange={e => handleInfoChange('school', e.target.value)}
-              placeholder="Enter School"
+              placeholder="Enter School Name"
             />
           </div>
           <div className="space-y-1">
             <label className="text-xs font-bold text-slate-400 uppercase flex items-center gap-1">
-              Candidate Name <span className="text-red-500">*</span>
+              Candidate Name <span className="text-red-500 font-bold">*</span>
             </label>
             <input 
               className="w-full border-b-2 border-slate-200 focus:border-blue-500 outline-none py-1 transition-colors bg-transparent font-semibold"
               value={data.info.name}
               onChange={e => handleInfoChange('name', e.target.value)}
-              placeholder="Enter Full Name"
+              placeholder="Full Legal Name"
             />
           </div>
         </div>
@@ -628,9 +624,9 @@ const App: React.FC = () => {
           <div className="hidden lg:block">
             <div className="flex items-center gap-2 mb-1">
               <p className="text-xs font-bold text-slate-400 uppercase">Current Candidate</p>
-              {submitStatus === 'success' && <span className="text-[10px] bg-emerald-100 text-emerald-700 px-2 py-0.5 rounded-full font-bold">Waiting for next...</span>}
+              {submitStatus === 'success' && <span className="text-[10px] bg-emerald-100 text-emerald-700 px-2 py-0.5 rounded-full font-bold">Ready for next</span>}
             </div>
-            <p className="text-sm font-bold text-slate-800 truncate max-w-[200px]">{data.info.name || 'Ready for entry'}</p>
+            <p className="text-sm font-bold text-slate-800 truncate max-w-[200px]">{data.info.name || 'Waiting for input...'}</p>
           </div>
           
           <div className="flex items-center gap-4 md:gap-8">
@@ -654,13 +650,13 @@ const App: React.FC = () => {
                 ) : (
                   <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M8 7H5a2 2 0 00-2 2v9a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-3m-1 4l-3 3m0 0l-3-3m3 3V4"></path></svg>
                 )}
-                <span className="font-bold">{isSubmitting ? 'Saving...' : 'Save'}</span>
+                <span className="font-bold">{isSubmitting ? 'Saving...' : 'Save Data'}</span>
               </button>
 
               <button 
                 onClick={handleManualReset}
                 className="bg-slate-200 text-slate-600 p-3 rounded-xl hover:bg-slate-300 transition-colors"
-                title="Clear Form"
+                title="Reset Form"
               >
                 <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg>
               </button>
